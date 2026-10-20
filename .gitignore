@@ -35,3 +35,6 @@ ehthumbs.db
 *.njsproj
 *.sln
 *.sw?
+
+# Documentation
+docs/
