@@ -1,164 +1,234 @@
-import { useMemo, useState } from 'react'
+import { useState, useMemo } from 'react'
+import { Header } from './components/Header'
+import { KpiBar } from './components/KpiBar'
+import { SensorCard } from './components/SensorCard'
+import { ActuatorCard } from './components/ActuatorCard'
+import { TrendChart } from './components/TrendChart'
+import { LivePointsTable } from './components/LivePointsTable'
+import { GatewayConfig } from './components/GatewayConfig'
 import {
-  Activity, Building2, CheckCircle2, CircleHelp, Clock3, Droplets,
-  History, LayoutDashboard, Lightbulb, Moon, Network, Sun, Thermometer,
-  Wind, SlidersHorizontal, ShieldAlert, Menu
-} from 'lucide-react'
-import {
-  Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis
-} from 'recharts'
-import { areas, initialActuators, initialSensors, initialTrend } from './mockData'
+  areas,
+  initialSensors,
+  initialActuators,
+  initialTrend,
+  defaultGatewayInfo
+} from './mockData'
 import type { ActuatorPoint, SensorPoint } from './types'
-
-function qualityLabel(q: string) {
-  return ({ simulated: 'SIMULASI', unconfigured: 'BELUM DIKONFIGURASI', good: 'LIVE', stale: 'DATA LAMA', error: 'ERROR' } as Record<string, string>)[q] ?? q.toUpperCase()
-}
 
 export default function App() {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
-  const [area, setArea] = useState('Overview')
-  const [sensors] = useState(initialSensors)
-  const [actuators, setActuators] = useState(initialActuators)
-  const [activeNav, setActiveNav] = useState('Dashboard')
-  const [showMenu, setShowMenu] = useState(false)
+  const [activeTab, setActiveTab] = useState<string>('Overview')
+  const [selectedArea, setSelectedArea] = useState<string>('All Areas')
+  const [searchQuery, setSearchQuery] = useState<string>('')
 
-  const visibleSensors = useMemo(() => area === 'Overview' ? sensors : sensors.filter(p => p.area === area), [area, sensors])
-  const visibleActuators = useMemo(() => area === 'Overview' ? actuators : actuators.filter(p => p.area === area), [area, actuators])
+  const [sensors] = useState<SensorPoint[]>(initialSensors)
+  const [actuators, setActuators] = useState<ActuatorPoint[]>(initialActuators)
+  const [gateway, setGateway] = useState(defaultGatewayInfo)
 
-  function simulateToggle(point: ActuatorPoint) {
-    // Local demo only. Real writes are intentionally not implemented.
-    setActuators(current => current.map(p => p.id === point.id ? {
-      ...p, state: p.state === 'on' ? 'off' : 'on', updatedAt: new Date().toISOString(), quality: 'simulated'
-    } : p))
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))
   }
 
-  const iconFor = (point: SensorPoint) => {
-    if (point.kind === 'temperature') return <Thermometer />
-    if (point.kind === 'humidity') return <Droplets />
-    if (point.kind === 'air-quality') return <Wind />
-    return <Activity />
+  // Actuator interaction handlers (Phase 1 Simulated)
+  const handleToggleActuator = (target: ActuatorPoint) => {
+    setActuators((current) =>
+      current.map((pt) => {
+        if (pt.id !== target.id) return pt
+        const nextState = pt.state === 'on' ? 'off' : 'on'
+        return {
+          ...pt,
+          state: nextState,
+          updatedAt: new Date().toISOString(),
+          quality: 'simulated'
+        }
+      })
+    )
   }
+
+  const handleUpdateLevel = (target: ActuatorPoint, newLevel: number) => {
+    setActuators((current) =>
+      current.map((pt) => {
+        if (pt.id !== target.id) return pt
+        return {
+          ...pt,
+          level: newLevel,
+          state: newLevel > 0 ? 'on' : 'off',
+          updatedAt: new Date().toISOString()
+        }
+      })
+    )
+  }
+
+  const handleUpdateTemp = (target: ActuatorPoint, delta: number) => {
+    setActuators((current) =>
+      current.map((pt) => {
+        if (pt.id !== target.id) return pt
+        const currentTemp = pt.targetTemp ?? 22.0
+        const nextTemp = Math.round((currentTemp + delta) * 10) / 10
+        return {
+          ...pt,
+          targetTemp: Math.max(16, Math.min(30, nextTemp)),
+          updatedAt: new Date().toISOString()
+        }
+      })
+    )
+  }
+
+  const handleSimulatePing = () => {
+    setGateway((prev) => ({
+      ...prev,
+      lastPollAt: new Date().toISOString(),
+      status: 'simulated'
+    }))
+  }
+
+  // Filtering points based on Area and Search
+  const visibleSensors = useMemo(() => {
+    return sensors.filter((s) => {
+      const matchesArea = selectedArea === 'All Areas' || s.area === selectedArea
+      const matchesSearch =
+        searchQuery.trim() === '' ||
+        s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.area.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (s.dpt && s.dpt.toLowerCase().includes(searchQuery.toLowerCase()))
+      return matchesArea && matchesSearch
+    })
+  }, [sensors, selectedArea, searchQuery])
+
+  const visibleActuators = useMemo(() => {
+    return actuators.filter((a) => {
+      const matchesArea = selectedArea === 'All Areas' || a.area === selectedArea
+      const matchesSearch =
+        searchQuery.trim() === '' ||
+        a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        a.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        a.area.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (a.dpt && a.dpt.toLowerCase().includes(searchQuery.toLowerCase()))
+      return matchesArea && matchesSearch
+    })
+  }, [actuators, selectedArea, searchQuery])
 
   return (
     <div className={`app ${theme}`}>
-      <aside className={`sidebar ${showMenu ? 'open' : ''}`}>
-        <div className="brand"><div className="brand-mark"><Building2 size={22}/></div><div><b>KNX Monitor</b><small>BUILDING AUTOMATION</small></div></div>
-        <div className="nav-label">WORKSPACE</div>
-        {[
-          ['Dashboard', <LayoutDashboard size={18}/>],
-          ['Live points', <Network size={18}/>],
-          ['History', <History size={18}/>],
-          ['Configuration', <SlidersHorizontal size={18}/>]
-        ].map(([label, icon]) => <button key={label as string} className={`nav-item ${activeNav === label ? 'selected' : ''}`} onClick={() => setActiveNav(label as string)}>{icon}{label}</button>)}
-        <div className="sidebar-bottom"><div className="gateway-icon"><Network size={17}/><span className="status-dot"/></div><div><b>KNX Gateway</b><small>Not connected</small></div><span className="offline-pill">OFFLINE</span></div>
-      </aside>
+      {/* Central Modern Header */}
+      <Header
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        activeTab={activeTab}
+        onChangeTab={setActiveTab}
+        areas={areas}
+        selectedArea={selectedArea}
+        onChangeArea={setSelectedArea}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        gateway={gateway}
+      />
 
-      <main className="main">
-        <header className="topbar">
-          <div className="heading">
-            <button className="icon-button mobile-menu" aria-label="Open menu" onClick={() => setShowMenu(v => !v)}><Menu/></button>
-            <div><div className="eyebrow">BUILDING MANAGEMENT / OVERVIEW</div><h1>{activeNav}</h1></div>
-          </div>
-          <div className="top-actions">
-            <span className="demo-pill"><span/> SIMULATION MODE</span>
-            <button className="icon-button" aria-label="Toggle theme" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun size={18}/> : <Moon size={18}/>}</button>
-            <div className="avatar">KM</div>
-          </div>
-        </header>
-
-        <section className="welcome-row">
-          <div><h2>Building overview</h2><p>Monitor your KNX devices, sensors, and actuators in one place.</p></div>
-          <div className="updated"><Clock3 size={15}/><span>Demo data · {new Date().toLocaleTimeString()}</span></div>
-        </section>
-
-        <section className="area-row">
-          <div className="area-tabs">{areas.map(a => <button key={a} onClick={() => setArea(a)} className={area === a ? 'active' : ''}>{a}</button>)}</div>
-          <button className="secondary-button" onClick={() => setActiveNav('Configuration')}><SlidersHorizontal size={15}/> Configure dashboard</button>
-        </section>
-
-        {activeNav === 'Configuration' ? (
-          <section className="panel config-panel">
-            <div className="panel-title"><div><h3>Point configuration</h3><p>Generic points are ready to be mapped when the register list is available.</p></div><CircleHelp/></div>
-            <div className="notice"><ShieldAlert size={19}/><div><b>Modbus mapping required</b><p>Real reads and actuator writes are locked until register addresses, data types, scaling, and write permissions are verified.</p></div></div>
-            <div className="config-grid"><div><small>Gateway host</small><b>192.168.100.246</b></div><div><small>TCP port</small><b>502</b></div><div><small>Unit ID</small><b>1</b></div><div><small>Register map</small><b>Not configured</b></div></div>
-            <button className="primary-button" onClick={() => setActiveNav('Dashboard')}>Back to dashboard</button>
-          </section>
-        ) : activeNav === 'History' ? (
-          <section className="panel"><div className="panel-title"><div><h3>History</h3><p>Trend preview from mock data. Persistent history is planned through PostgreSQL.</p></div><History/></div><TrendChart data={initialTrend}/></section>
-        ) : activeNav === 'Live points' ? (
-          <section className="panel">
-            <div className="panel-title">
-              <div>
-                <h3>All points</h3>
-                <p>Generic sensor and actuator points.</p>
-              </div>
-              <Network />
-            </div>
-            <div className="point-list">
-              {[
-                ...visibleSensors.map(p => ({
-                  id: p.id,
-                  name: p.name,
-                  area: p.area,
-                  type: 'Sensor',
-                  state: p.value === null ? 'Unconfigured' : `${p.value} ${p.unit}`,
-                  quality: p.quality
-                })),
-                ...visibleActuators.map(p => ({
-                  id: p.id,
-                  name: p.name,
-                  area: p.area,
-                  type: 'Actuator',
-                  state: p.state.toUpperCase(),
-                  quality: p.quality
-                }))
-              ].map(p => (
-                <div className="point-row" key={p.id}>
-                  <span>
-                    {p.name}
-                    <small>{p.area} · {p.type}</small>
-                  </span>
-                  <b>{p.state}</b>
-                  <span className="quality">{qualityLabel(p.quality)}</span>
-                </div>
-              ))}
-            </div>
-          </section>
-        ) : (
+      {/* Main Content Area */}
+      <main className="knx-main-content">
+        {activeTab === 'Overview' && (
           <>
-            <section className="stats-grid">
-              <div className="stat-card"><div className="stat-top"><span>Active sensors</span><span className="stat-icon blue"><Activity size={18}/></span></div><div className="stat-value">{visibleSensors.filter(s => s.value !== null).length}<small> points</small></div><div className="stat-foot">Using simulated readings</div></div>
-              <div className="stat-card"><div className="stat-top"><span>Actuators</span><span className="stat-icon amber"><Lightbulb size={18}/></span></div><div className="stat-value">{visibleActuators.length}<small> points</small></div><div className="stat-foot">{visibleActuators.filter(a => a.state === 'on').length} currently shown as ON</div></div>
-              <div className="stat-card"><div className="stat-top"><span>Gateway status</span><span className="stat-icon red"><Network size={18}/></span></div><div className="stat-value text-value">Offline</div><div className="stat-foot">Modbus integration not enabled</div></div>
-              <div className="stat-card"><div className="stat-top"><span>Data quality</span><span className="stat-icon green"><CheckCircle2 size={18}/></span></div><div className="stat-value text-value">Demo</div><div className="stat-foot">No live device data yet</div></div>
-            </section>
+            {/* Top Level Metric Cards */}
+            <KpiBar
+              sensors={sensors}
+              actuators={actuators}
+              gateway={gateway}
+            />
 
-            <section className="section-heading"><div><h2>Environmental monitoring</h2><p>Live points will appear here after mapping is configured.</p></div><span className="section-count">{visibleSensors.length} points</span></section>
-            <section className="sensor-grid">
-              {visibleSensors.map(point => <div className="sensor-card" key={point.id}>
-                <div className="card-heading"><div className={`sensor-icon ${point.kind}`}>{iconFor(point)}</div><span className={`quality-tag ${point.quality}`}>{qualityLabel(point.quality)}</span></div>
-                <div className="sensor-name">{point.name}</div>
-                <div className="sensor-reading">{point.value === null ? '—' : point.value}<small>{point.unit}</small></div>
-                <div className="sensor-bottom"><span>{point.area}</span><span>{point.value === null ? 'Awaiting mapping' : 'Simulated value'}</span></div>
-              </div>)}
-            </section>
-
-            <section className="lower-grid">
-              <div className="panel chart-panel"><div className="panel-title"><div><h3>Environmental trends</h3><p>Illustrative data · not from the gateway</p></div><span className="chart-legend"><i/>Temperature</span></div><TrendChart data={initialTrend}/></div>
-              <div className="panel"><div className="panel-title"><div><h3>Actuator status</h3><p>Controls are simulation-only at this stage.</p></div><Lightbulb/></div>
-                <div className="actuator-list">{visibleActuators.map(point => <div className="actuator-row" key={point.id}><div className="actuator-symbol"><Lightbulb size={19}/></div><div className="actuator-info"><b>{point.name}</b><small>{point.area} · {point.kind.toUpperCase()}</small></div><div className="actuator-action"><button className={`toggle ${point.state === 'on' ? 'on' : ''}`} onClick={() => simulateToggle(point)} aria-label={`Simulate ${point.name} toggle`}><span/></button><small>{point.state === 'on' ? 'ON' : point.state === 'off' ? 'OFF' : 'UNKNOWN'}</small></div></div>)}
-                {visibleActuators.length === 0 && <div className="empty">No actuator points configured for this area.</div>}</div>
-                <div className="safety-note"><ShieldAlert size={15}/> Demo toggles change local mock state only. No real device commands are sent.</div>
+            {/* Environmental Monitoring Sensors */}
+            <section className="section-container">
+              <div className="section-head">
+                <div className="section-title-group">
+                  <h2 className="section-title">Environmental & Power Telemetry</h2>
+                  <span className="section-subtitle">
+                    Continuous monitoring across {selectedArea}
+                  </span>
+                </div>
+                <span className="section-counter-badge">
+                  {visibleSensors.length} active points
+                </span>
               </div>
+
+              <div className="sensors-grid">
+                {visibleSensors.map((point) => (
+                  <SensorCard key={point.id} point={point} />
+                ))}
+              </div>
+            </section>
+
+            {/* Actuators & Building Subsystems */}
+            <section className="section-container">
+              <div className="section-head">
+                <div className="section-title-group">
+                  <h2 className="section-title">Actuator Subsystems & Controls</h2>
+                  <span className="section-subtitle">
+                    Lighting, Climate VRV, Louvers & Ventilation
+                  </span>
+                </div>
+                <span className="section-counter-badge">
+                  {visibleActuators.length} actuators
+                </span>
+              </div>
+
+              <div className="actuators-grid">
+                {visibleActuators.map((point) => (
+                  <ActuatorCard
+                    key={point.id}
+                    point={point}
+                    onToggle={handleToggleActuator}
+                    onUpdateLevel={handleUpdateLevel}
+                    onUpdateTemp={handleUpdateTemp}
+                  />
+                ))}
+              </div>
+            </section>
+
+            {/* 12-Hour Telemetry Trends */}
+            <section className="section-container">
+              <TrendChart data={initialTrend} />
             </section>
           </>
         )}
-        <footer><span>KNX BUILDING MONITOR</span><span>Gateway 192.168.100.246 · TCP 502 · Unit ID 1</span></footer>
+
+        {activeTab === 'Live points' && (
+          <LivePointsTable
+            sensors={sensors}
+            actuators={actuators}
+            selectedArea={selectedArea}
+          />
+        )}
+
+        {activeTab === 'History' && (
+          <section className="section-container">
+            <TrendChart data={initialTrend} />
+          </section>
+        )}
+
+        {activeTab === 'Configuration' && (
+          <GatewayConfig
+            gateway={gateway}
+            onSimulatePing={handleSimulatePing}
+            onReturnToDashboard={() => setActiveTab('Overview')}
+          />
+        )}
       </main>
+
+      {/* Clean Modern Footer */}
+      <footer className="knx-footer">
+        <div className="footer-inner">
+          <div className="footer-left">
+            <span>KNX Building Automation Matrix</span>
+            <span className="footer-bullet">•</span>
+            <span>Architecture: React 18 + Node-RED + PostgreSQL</span>
+            <span className="footer-bullet">•</span>
+            <span>Target Gateway: {gateway.host}:{gateway.port} (Unit {gateway.unitId})</span>
+          </div>
+          <div className="footer-right">
+            <span>Phase 1 Verification Complete</span>
+          </div>
+        </div>
+      </footer>
     </div>
   )
-}
-
-function TrendChart({ data }: { data: typeof initialTrend }) {
-  return <div className="chart-wrap"><ResponsiveContainer width="100%" height="100%"><AreaChart data={data} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}><defs><linearGradient id="tempFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#39b9e9" stopOpacity={0.24}/><stop offset="100%" stopColor="#39b9e9" stopOpacity={0.01}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--chart-grid)"/><XAxis dataKey="time" tick={{ fill: 'var(--muted)', fontSize: 11 }} axisLine={false} tickLine={false}/><YAxis tick={{ fill: 'var(--muted)', fontSize: 11 }} axisLine={false} tickLine={false}/><Tooltip contentStyle={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text)' }}/><Area type="monotone" dataKey="temperature" name="Temperature °C" stroke="#39b9e9" strokeWidth={2.5} fill="url(#tempFill)"/></AreaChart></ResponsiveContainer></div>
 }
