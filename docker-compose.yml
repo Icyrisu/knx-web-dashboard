@@ -1,0 +1,54 @@
+services:
+  dashboard:
+    build:
+      context: ./frontend
+    ports:
+      - "${DASHBOARD_PORT:-8080}:80"
+    depends_on:
+      - node-red
+    restart: unless-stopped
+
+  node-red:
+    build:
+      context: ./node-red
+    ports:
+      - "${NODE_RED_PORT:-1880}:1880"
+    environment:
+      MODBUS_HOST: ${MODBUS_HOST:-192.168.100.246}
+      MODBUS_PORT: ${MODBUS_PORT:-502}
+      MODBUS_UNIT_ID: ${MODBUS_UNIT_ID:-1}
+      MODBUS_POLL_INTERVAL_MS: ${MODBUS_POLL_INTERVAL_MS:-2000}
+      MODBUS_TIMEOUT_MS: ${MODBUS_TIMEOUT_MS:-3000}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-knx_dashboard}
+      POSTGRES_USER: ${POSTGRES_USER:-knx_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_local_only}
+    volumes:
+      - node_red_data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-knx_dashboard}
+      POSTGRES_USER: ${POSTGRES_USER:-knx_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_local_only}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./node-red/init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  node_red_data:
+  postgres_data:
